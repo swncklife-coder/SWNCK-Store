@@ -3,6 +3,7 @@ export type ProductCategory = {
   name: string;
   slug: string;
   description: string | null;
+  image_url?: string | null;
   is_active: boolean;
   sort_order: number;
 };
@@ -13,12 +14,14 @@ export type Product = {
   slug: string;
   description: string | null;
   category_id: string;
+  primary_image_url?: string | null;
   sustainability_story: string | null;
   fit_notes: string | null;
   care_instructions: string | null;
   is_active: boolean;
   is_featured: boolean;
   sort_order: number;
+  created_at?: string;
   category?: ProductCategory;
 };
 
@@ -51,4 +54,27 @@ export type SiteSetting = {
   id: string;
   key: string;
   value: string;
+};
+
+export type HomepageSection = {
+  id: string;
+  section_key: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  image_url: string | null;
+  cta_label: string | null;
+  cta_href: string | null;
+};
+
+export type ProductCollection = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image_url: string | null;
+  is_active: boolean;
+  sort_order: number;
+  source_type?: "manual" | "automatic";
+  auto_rule?: unknown | null;
 };

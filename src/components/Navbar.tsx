@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import logo from "@/assets/swnck-logo.png";
+import { useSiteSettings } from "@/hooks/use-site-settings";
+import { resolvePublicAssetUrl } from "@/lib/site-url";
 
 const navLinks = ["Collections", "Story", "Sustainability", "Journal"];
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { settings } = useSiteSettings();
+  const logoFromSettings = settings.get("logo_url");
+  const logoUrl = logoFromSettings ? (resolvePublicAssetUrl(logoFromSettings) ?? logoFromSettings) : logo;
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
       <div className="flex items-center justify-between px-6 md:px-12 py-4">
         <a href="#" className="flex items-center">
-          <img src={logo} alt="SWNCK" className="h-20 md:h-24 w-auto" />
+          <img src={logoUrl} alt="SWNCK" className="h-20 md:h-24 w-auto" />
         </a>
 
         {/* Desktop Nav */}

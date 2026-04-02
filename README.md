@@ -44,8 +44,23 @@ npm run dev
 1. Create a Supabase project.
 2. Run SQL migration from:
    - `supabase/migrations/001_swnck_ecommerce_foundation.sql`
-3. In Supabase Auth, create your admin users and set `app_metadata.role = "admin"` (required by RLS policies for admin writes).
-4. Enable Email OTP / Magic Link sign-in.
+   - `supabase/migrations/002_admin_cms_expansion.sql`
+   - `supabase/migrations/003_storage_uploads_rls.sql` (image uploads bucket + policies)
+3. Enable Email OTP / Magic Link sign-in in Supabase Auth.
+
+## Seeded admin login model
+
+- Admin panel URL: `/admin`
+- Admin authorization now uses `admin_user` table (seeded in migration 002).
+- Update seeded placeholder admin email after migration:
+
+```sql
+update admin_user
+set email = 'your-real-admin-email@example.com', full_name = 'SWNCK Admin'
+where email = 'admin@swnck.com';
+```
+
+- Sign in on `/admin` with that same email using magic link.
 
 ## Seed your first catalog
 

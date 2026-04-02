@@ -1,15 +1,77 @@
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 import NotFound from "./pages/NotFound.tsx";
+import Index from "./pages/Index.tsx";
+import Hero from "@/components/Hero";
+import { ProductDetail } from "@/components/ProductDetail";
+import { ImageUploadField } from "@/components/admin/ImageUploadField";
+import { AdminCatalogPanel } from "@/components/admin/AdminCatalogPanel";
+import { MarkdownContent } from "@/lib/markdown";
 import { supabase } from "@/lib/supabase";
-import type { CmsPage, Product, ProductCategory, ProductVariant, SiteSetting } from "@/types/commerce";
+import type { CmsPage, HomepageSection, Product, ProductCategory, ProductCollection, ProductVariant, SiteSetting } from "@/types/commerce";
+import { DEFAULT_PDP_TEMPLATE, type PdpTemplate, parsePdpTemplate } from "@/types/pdp-template";
 import { formatInr } from "@/lib/format";
+import { getPublicSiteUrl } from "@/lib/site-url";
 
 const queryClient = new QueryClient();
+
+const PDP_PREVIEW_MOCK_PRODUCT: Product = {
+  id: "__pdp_preview__",
+  title: "Bamboo Crew Tee — Preview",
+  slug: "preview-product",
+  description: "Soft, breathable fabric for daily wear. This is sample copy so you can see how your template looks.",
+  category_id: "",
+  primary_image_url: null,
+  sustainability_story: "Lower-impact fibres and mindful production — preview block.",
+  fit_notes: "Relaxed through the body. Model wears M.",
+  care_instructions: "Machine wash cold. Hang dry for best longevity.",
+  is_active: true,
+  is_featured: true,
+  sort_order: 0,
+  category: { id: "", name: "Unisex", slug: "unisex", description: null, is_active: true, sort_order: 0 },
+};
+
+const PDP_PREVIEW_MOCK_VARIANTS: ProductVariant[] = [
+  {
+    id: "__pv1__",
+    product_id: "__pdp_preview__",
+    sku: "PREVIEW-OLV-M",
+    size: "M",
+    color: "Olive",
+    material: "Bamboo viscose",
+    inventory_qty: 99,
+    price_inr: 1899,
+    compare_at_price_inr: 2199,
+    weight_grams: 180,
+    image_url: null,
+    is_active: true,
+  },
+  {
+    id: "__pv2__",
+    product_id: "__pdp_preview__",
+    sku: "PREVIEW-OLV-L",
+    size: "L",
+    color: "Olive",
+    material: "Bamboo viscose",
+    inventory_qty: 99,
+    price_inr: 1899,
+    compare_at_price_inr: null,
+    weight_grams: 190,
+    image_url: null,
+    is_active: true,
+  },
+];
 
 type CartItem = {
   variantId: string;
@@ -175,51 +237,25 @@ function ShopPage({ onAddToCart }: { onAddToCart: (item: CartItem) => void }) {
 function ProductPage({ onAddToCart }: { onAddToCart: (item: CartItem) => void }) {
   const { slug } = useParams();
   const { products, variants } = useStoreData();
+  const pdpTemplateQuery = useQuery({
+    queryKey: ["pdp-template"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("site_setting").select("value").eq("key", "pdp_template").maybeSingle();
+      if (error) throw error;
+      return parsePdpTemplate(data?.value);
+    },
+  });
+
   const product = (products.data || []).find((p) => p.slug === slug);
   const relatedVariants = (variants.data || []).filter((v) => v.product_id === product?.id);
-  const [selectedVariantId, setSelectedVariantId] = useState<string>("");
-
-  useEffect(() => {
-    if (relatedVariants.length > 0) setSelectedVariantId(relatedVariants[0].id);
-  }, [slug, relatedVariants.length]);
-
-  const selectedVariant = relatedVariants.find((v) => v.id === selectedVariantId);
   if (!product) return <NotFound />;
+
+  const template = pdpTemplateQuery.data ?? DEFAULT_PDP_TEMPLATE;
 
   return (
     <AppShell>
-      <main className="max-w-4xl mx-auto px-4 py-10 space-y-6">
-        <h1 className="text-3xl font-semibold">{product.title}</h1>
-        <p className="text-muted-foreground">{product.description}</p>
-        <p>{product.sustainability_story}</p>
-        <select
-          className="border rounded px-3 py-2"
-          value={selectedVariantId}
-          onChange={(e) => setSelectedVariantId(e.target.value)}
-        >
-          {relatedVariants.map((variant) => (
-            <option key={variant.id} value={variant.id}>
-              {variant.size} / {variant.color} - {formatInr(variant.price_inr)}
-            </option>
-          ))}
-        </select>
-        {!!selectedVariant && (
-          <button
-            className="rounded bg-foreground text-background px-4 py-2"
-            onClick={() =>
-              onAddToCart({
-                variantId: selectedVariant.id,
-                productTitle: product.title,
-                size: selectedVariant.size,
-                color: selectedVariant.color,
-                qty: 1,
-                unitPriceInr: selectedVariant.price_inr,
-              })
-            }
-          >
-            Add to cart
-          </button>
-        )}
+      <main className="max-w-6xl mx-auto px-4 py-10">
+        <ProductDetail product={product} variants={relatedVariants} template={template} onAddToCart={onAddToCart} />
       </main>
     </AppShell>
   );
@@ -324,22 +360,37 @@ function CheckoutPage({ cart, onClearCart }: { cart: CartItem[]; onClearCart: ()
 }
 
 function AdminPage() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [session, setSession] = useState<boolean>(false);
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [variantProductId, setVariantProductId] = useState("");
-  const [variantSku, setVariantSku] = useState("");
-  const [variantSize, setVariantSize] = useState("M");
-  const [variantColor, setVariantColor] = useState("Natural");
-  const [variantMaterial, setVariantMaterial] = useState("Bamboo");
-  const [variantPrice, setVariantPrice] = useState(0);
   const [pageTitle, setPageTitle] = useState("");
   const [pageSlug, setPageSlug] = useState("");
   const [pageContent, setPageContent] = useState("");
+  const [cmsSelectedSlug, setCmsSelectedSlug] = useState<string>("");
+  const [pdpDraft, setPdpDraft] = useState<PdpTemplate>(DEFAULT_PDP_TEMPLATE);
   const [settingKey, setSettingKey] = useState("");
   const [settingValue, setSettingValue] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [faviconUrl, setFaviconUrl] = useState("");
+  const [heroTitle, setHeroTitle] = useState("");
+  const [heroSubtitle, setHeroSubtitle] = useState("");
+  const [heroDescription, setHeroDescription] = useState("");
+  const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [heroCtaLabel, setHeroCtaLabel] = useState("");
+  const [heroCtaHref, setHeroCtaHref] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactWhatsapp, setContactWhatsapp] = useState("");
+  const [contactAddress, setContactAddress] = useState("");
+  const [editMode, setEditMode] = useState<Record<string, boolean>>({
+    hero: false,
+    pages: false,
+    branding: false,
+    contact: false,
+    advanced: false,
+    pdp: false,
+  });
 
   const categories = useQuery({
     queryKey: ["admin-categories"],
@@ -347,7 +398,11 @@ function AdminPage() {
   });
   const products = useQuery({
     queryKey: ["admin-products"],
-    queryFn: async () => (await supabase.from("product").select("*").order("sort_order")).data as Product[],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("product").select("*, category:product_category(*)").order("sort_order");
+      if (error) throw error;
+      return (data || []) as Product[];
+    },
   });
   const variants = useQuery({
     queryKey: ["admin-variants"],
@@ -361,51 +416,138 @@ function AdminPage() {
     queryKey: ["admin-settings"],
     queryFn: async () => (await supabase.from("site_setting").select("*").order("key")).data as SiteSetting[],
   });
+  const collections = useQuery({
+    queryKey: ["admin-collections"],
+    queryFn: async () => (await supabase.from("product_collection").select("*").order("sort_order")).data as ProductCollection[],
+  });
+  const homepage = useQuery({
+    queryKey: ["admin-homepage"],
+    queryFn: async () => (await supabase.from("homepage_section").select("*")).data as HomepageSection[],
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(Boolean(data.session)));
   }, []);
 
   async function loginWithMagicLink() {
-    const { error } = await supabase.auth.signInWithOtp({ email });
+    const origin = getPublicSiteUrl();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: origin ? { emailRedirectTo: `${origin}/admin` } : undefined,
+    });
     if (error) alert(error.message);
     else alert("Magic link sent. Open your email to sign in.");
   }
 
-  async function createProduct() {
-    const { error } = await supabase.from("product").insert({ title, slug, category_id: categoryId, is_active: true, sort_order: 0 });
+  async function saveCmsPage() {
+    const { error } = await supabase.from("cms_page").upsert(
+      { title: pageTitle, slug: pageSlug, content_md: pageContent, is_published: true },
+      { onConflict: "slug" },
+    );
     if (error) alert(error.message);
-    else window.location.reload();
+    else {
+      await queryClient.invalidateQueries({ queryKey: ["admin-pages"] });
+      toast({ title: "Saved", description: "Page published successfully." });
+      setEditMode((prev) => ({ ...prev, pages: false }));
+    }
   }
 
-  async function createVariant() {
-    const { error } = await supabase.from("product_variant").insert({
-      product_id: variantProductId,
-      sku: variantSku,
-      size: variantSize,
-      color: variantColor,
-      material: variantMaterial,
-      inventory_qty: 10,
-      price_inr: variantPrice,
-      is_active: true,
-    });
+  async function savePdpTemplate() {
+    const { error } = await supabase.from("site_setting").upsert(
+      { key: "pdp_template", value: JSON.stringify(pdpDraft) },
+      { onConflict: "key" },
+    );
     if (error) alert(error.message);
-    else window.location.reload();
-  }
-
-  async function createPage() {
-    const { error } = await supabase
-      .from("cms_page")
-      .insert({ title: pageTitle, slug: pageSlug, content_md: pageContent, is_published: true });
-    if (error) alert(error.message);
-    else window.location.reload();
+    else {
+      await queryClient.invalidateQueries({ queryKey: ["pdp-template"] });
+      toast({ title: "Saved", description: "Product page template updated." });
+      setEditMode((prev) => ({ ...prev, pdp: false }));
+    }
   }
 
   async function upsertSetting() {
     const { error } = await supabase.from("site_setting").upsert({ key: settingKey, value: settingValue }, { onConflict: "key" });
     if (error) alert(error.message);
-    else window.location.reload();
+    else {
+      await queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+      toast({ title: "Saved", description: "Setting updated." });
+      setEditMode((prev) => ({ ...prev, advanced: false }));
+    }
   }
+
+  async function saveBranding() {
+    const payload = [
+      { key: "logo_url", value: logoUrl || "" },
+      { key: "favicon_url", value: faviconUrl || "" },
+    ];
+    const { error } = await supabase.from("site_setting").upsert(payload, { onConflict: "key" });
+    if (error) alert(error.message);
+    else {
+      await queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+      toast({ title: "Saved", description: "Branding updated." });
+      setEditMode((prev) => ({ ...prev, branding: false }));
+    }
+  }
+
+  async function saveContactDetails() {
+    const payload = [
+      { key: "contact_phone", value: contactPhone || "" },
+      { key: "contact_email", value: contactEmail || "" },
+      { key: "contact_whatsapp", value: contactWhatsapp || "" },
+      { key: "contact_address", value: contactAddress || "" },
+    ];
+    const { error } = await supabase.from("site_setting").upsert(payload, { onConflict: "key" });
+    if (error) alert(error.message);
+    else {
+      await queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+      toast({ title: "Saved", description: "Contact details updated." });
+      setEditMode((prev) => ({ ...prev, contact: false }));
+    }
+  }
+
+  async function saveHeroSection() {
+    const { error } = await supabase.from("homepage_section").upsert(
+      {
+        section_key: "hero",
+        title: heroTitle,
+        subtitle: heroSubtitle,
+        description: heroDescription,
+        image_url: heroImageUrl,
+        cta_label: heroCtaLabel,
+        cta_href: heroCtaHref,
+      },
+      { onConflict: "section_key" },
+    );
+    if (error) alert(error.message);
+    else {
+      await queryClient.invalidateQueries({ queryKey: ["admin-homepage"] });
+      await queryClient.invalidateQueries({ queryKey: ["homepage-hero"] });
+      toast({ title: "Saved", description: "Homepage hero updated." });
+      setEditMode((prev) => ({ ...prev, hero: false }));
+    }
+  }
+
+  useEffect(() => {
+    const settingMap = new Map((settings.data || []).map((s) => [s.key, s.value]));
+    setLogoUrl(settingMap.get("logo_url") || "");
+    setFaviconUrl(settingMap.get("favicon_url") || "");
+    setContactPhone(settingMap.get("contact_phone") || "");
+    setContactEmail(settingMap.get("contact_email") || "");
+    setContactWhatsapp(settingMap.get("contact_whatsapp") || "");
+    setContactAddress(settingMap.get("contact_address") || "");
+    setPdpDraft(parsePdpTemplate(settingMap.get("pdp_template")));
+  }, [settings.data]);
+
+  useEffect(() => {
+    const hero = (homepage.data || []).find((s) => s.section_key === "hero");
+    if (!hero) return;
+    setHeroTitle(hero.title || "");
+    setHeroSubtitle(hero.subtitle || "");
+    setHeroDescription(hero.description || "");
+    setHeroImageUrl(hero.image_url || "");
+    setHeroCtaLabel(hero.cta_label || "");
+    setHeroCtaHref(hero.cta_href || "");
+  }, [homepage.data]);
 
   if (!session) {
     return (
@@ -414,7 +556,7 @@ function AdminPage() {
           <h1 className="text-3xl font-semibold">Admin sign-in</h1>
           <p className="text-sm text-muted-foreground">Use a Supabase-authenticated admin email.</p>
           <input className="border rounded w-full p-2" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Admin email" />
-          <button onClick={loginWithMagicLink} className="rounded bg-foreground text-background px-4 py-2">Send magic link</button>
+          <Button onClick={loginWithMagicLink}>Send magic link</Button>
         </main>
       </AppShell>
     );
@@ -422,59 +564,335 @@ function AdminPage() {
 
   return (
     <AppShell>
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-10">
-        <h1 className="text-3xl font-semibold">SWNCK Admin</h1>
-        <section className="space-y-3 border rounded-lg p-4">
-          <h2 className="text-xl font-medium">Products</h2>
-          <div className="grid md:grid-cols-4 gap-3">
-            <input className="border rounded p-2" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-            <input className="border rounded p-2" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="Slug" />
-            <select className="border rounded p-2" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">Category</option>
-              {(categories.data || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <button className="rounded bg-foreground text-background px-4 py-2" onClick={createProduct}>Create</button>
-          </div>
-          {(products.data || []).map((p) => <p key={p.id} className="text-sm">{p.title} ({p.slug})</p>)}
-        </section>
+      <main className="max-w-7xl mx-auto px-4 py-10 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-3xl">SWNCK Admin</CardTitle>
+            <CardDescription>Manage catalog, homepage content, policies, and branding from one place.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid md:grid-cols-5 gap-3">
+            <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Categories</p><p className="text-2xl font-semibold">{(categories.data || []).length}</p></div>
+            <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Products</p><p className="text-2xl font-semibold">{(products.data || []).length}</p></div>
+            <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Variants</p><p className="text-2xl font-semibold">{(variants.data || []).length}</p></div>
+            <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Collections</p><p className="text-2xl font-semibold">{(collections.data || []).length}</p></div>
+            <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">CMS Pages</p><p className="text-2xl font-semibold">{(pages.data || []).length}</p></div>
+          </CardContent>
+        </Card>
 
-        <section className="space-y-3 border rounded-lg p-4">
-          <h2 className="text-xl font-medium">Variants</h2>
-          <div className="grid md:grid-cols-7 gap-2">
-            <select className="border rounded p-2" value={variantProductId} onChange={(e) => setVariantProductId(e.target.value)}>
-              <option value="">Product</option>
-              {(products.data || []).map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
-            </select>
-            <input className="border rounded p-2" value={variantSku} onChange={(e) => setVariantSku(e.target.value)} placeholder="SKU" />
-            <input className="border rounded p-2" value={variantSize} onChange={(e) => setVariantSize(e.target.value)} placeholder="Size" />
-            <input className="border rounded p-2" value={variantColor} onChange={(e) => setVariantColor(e.target.value)} placeholder="Color" />
-            <input className="border rounded p-2" value={variantMaterial} onChange={(e) => setVariantMaterial(e.target.value)} placeholder="Material" />
-            <input className="border rounded p-2" type="number" value={variantPrice} onChange={(e) => setVariantPrice(Number(e.target.value))} placeholder="Price INR" />
-            <button className="rounded bg-foreground text-background px-4 py-2" onClick={createVariant}>Create</button>
-          </div>
-          {(variants.data || []).map((v) => <p key={v.id} className="text-sm">{v.sku} - {formatInr(v.price_inr)}</p>)}
-        </section>
+        <Tabs defaultValue="dashboard" className="space-y-4">
+          <div className="grid lg:grid-cols-[220px_1fr] gap-6">
+            <TabsList className="h-fit w-full flex flex-col items-stretch gap-1 rounded-xl border bg-card p-2">
+              <TabsTrigger value="dashboard" className="justify-start">Dashboard</TabsTrigger>
+              <TabsTrigger value="catalog" className="justify-start">Catalog</TabsTrigger>
+              <TabsTrigger value="content" className="justify-start">Content</TabsTrigger>
+              <TabsTrigger value="brand" className="justify-start">Brand & Contact</TabsTrigger>
+              <TabsTrigger value="advanced" className="justify-start">Advanced</TabsTrigger>
+            </TabsList>
+            <div className="space-y-4">
+          <TabsContent value="dashboard">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">Dashboard</CardTitle>
+                <CardDescription>Quick snapshot and suggested admin flow.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>1) Update homepage hero and branding.</p>
+                <p>2) Create categories, then products and variants.</p>
+                <p>3) Build collections and assign products.</p>
+                <p>4) Finalize About/Privacy/Terms/Returns/Contact pages.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <section className="space-y-3 border rounded-lg p-4">
-          <h2 className="text-xl font-medium">CMS Pages</h2>
-          <div className="grid gap-2">
-            <input className="border rounded p-2" value={pageTitle} onChange={(e) => setPageTitle(e.target.value)} placeholder="Page title" />
-            <input className="border rounded p-2" value={pageSlug} onChange={(e) => setPageSlug(e.target.value)} placeholder="Page slug" />
-            <textarea className="border rounded p-2" rows={4} value={pageContent} onChange={(e) => setPageContent(e.target.value)} placeholder="Markdown content" />
-            <button className="rounded bg-foreground text-background px-4 py-2 w-fit" onClick={createPage}>Create page</button>
-          </div>
-          {(pages.data || []).map((p) => <p key={p.id} className="text-sm">{p.title} ({p.slug})</p>)}
-        </section>
+          <TabsContent value="catalog">
+            <AdminCatalogPanel />
+          </TabsContent>
 
-        <section className="space-y-3 border rounded-lg p-4">
-          <h2 className="text-xl font-medium">Site Settings</h2>
-          <div className="grid md:grid-cols-3 gap-2">
-            <input className="border rounded p-2" value={settingKey} onChange={(e) => setSettingKey(e.target.value)} placeholder="key (eg gst_number)" />
-            <input className="border rounded p-2" value={settingValue} onChange={(e) => setSettingValue(e.target.value)} placeholder="value" />
-            <button className="rounded bg-foreground text-background px-4 py-2" onClick={upsertSetting}>Save setting</button>
+          <TabsContent value="content">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">Site Content</CardTitle>
+                <CardDescription>Edit homepage sections and legal/informational pages.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Accordion type="multiple">
+                  <AccordionItem value="hero">
+                    <AccordionTrigger>Homepage Hero</AccordionTrigger>
+                    <AccordionContent>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        <Button variant="outline" onClick={() => setEditMode((p) => ({ ...p, hero: true }))}>Edit</Button>
+                        <Button onClick={saveHeroSection} disabled={!editMode.hero}>Save Changes</Button>
+                        <p className="text-xs text-muted-foreground w-full">Changes show instantly in the live preview before you save.</p>
+                      </div>
+                      <div className="grid xl:grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                          <input disabled={!editMode.hero} className="border rounded p-2 w-full disabled:opacity-60" value={heroTitle} onChange={(e) => setHeroTitle(e.target.value)} placeholder="Hero title" />
+                          <input disabled={!editMode.hero} className="border rounded p-2 w-full disabled:opacity-60" value={heroSubtitle} onChange={(e) => setHeroSubtitle(e.target.value)} placeholder="Hero subtitle" />
+                          <textarea disabled={!editMode.hero} className="border rounded p-2 w-full disabled:opacity-60" rows={3} value={heroDescription} onChange={(e) => setHeroDescription(e.target.value)} placeholder="Hero description" />
+                          <ImageUploadField
+                            label="Hero background image"
+                            disabled={!editMode.hero}
+                            value={heroImageUrl}
+                            onChange={setHeroImageUrl}
+                          />
+                          <div className="grid md:grid-cols-2 gap-2">
+                            <input disabled={!editMode.hero} className="border rounded p-2 disabled:opacity-60" value={heroCtaLabel} onChange={(e) => setHeroCtaLabel(e.target.value)} placeholder="CTA label" />
+                            <input disabled={!editMode.hero} className="border rounded p-2 disabled:opacity-60" value={heroCtaHref} onChange={(e) => setHeroCtaHref(e.target.value)} placeholder="CTA href (#collections or /shop)" />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium mb-2">Live preview</p>
+                          <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+                            <Hero
+                              variant="compact"
+                              preview={{
+                                title: heroTitle || undefined,
+                                subtitle: heroSubtitle || undefined,
+                                description: heroDescription || undefined,
+                                image_url: heroImageUrl || undefined,
+                                cta_label: heroCtaLabel || undefined,
+                                cta_href: heroCtaHref || undefined,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="pdp">
+                    <AccordionTrigger>Product page template</AccordionTrigger>
+                    <AccordionContent>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        <Button variant="outline" onClick={() => setEditMode((p) => ({ ...p, pdp: true }))}>Edit</Button>
+                        <Button onClick={savePdpTemplate} disabled={!editMode.pdp}>Save Changes</Button>
+                        <p className="text-xs text-muted-foreground w-full">Preview uses your first catalog product, or a built-in sample if the catalog is empty.</p>
+                      </div>
+                      <div className="grid xl:grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label>Layout</Label>
+                            <select
+                              disabled={!editMode.pdp}
+                              className="w-full border rounded-md p-2 bg-background disabled:opacity-60"
+                              value={pdpDraft.layout}
+                              onChange={(e) => setPdpDraft((d) => ({ ...d, layout: e.target.value as PdpTemplate["layout"] }))}
+                            >
+                              <option value="split">Split — image + details</option>
+                              <option value="stacked">Stacked — image above details</option>
+                            </select>
+                          </div>
+                          {pdpDraft.layout === "split" && (
+                            <div className="space-y-2">
+                              <Label>Image position</Label>
+                              <select
+                                disabled={!editMode.pdp}
+                                className="w-full border rounded-md p-2 bg-background disabled:opacity-60"
+                                value={pdpDraft.imagePosition}
+                                onChange={(e) => setPdpDraft((d) => ({ ...d, imagePosition: e.target.value as PdpTemplate["imagePosition"] }))}
+                              >
+                                <option value="left">Left</option>
+                                <option value="right">Right</option>
+                              </select>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <Label>Variant picker</Label>
+                            <select
+                              disabled={!editMode.pdp}
+                              className="w-full border rounded-md p-2 bg-background disabled:opacity-60"
+                              value={pdpDraft.variantPickerStyle}
+                              onChange={(e) =>
+                                setPdpDraft((d) => ({ ...d, variantPickerStyle: e.target.value as PdpTemplate["variantPickerStyle"] }))
+                              }
+                            >
+                              <option value="select">Dropdown</option>
+                              <option value="buttons">Buttons</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <Label htmlFor="pdp-sust">Show sustainability block</Label>
+                            <Switch
+                              id="pdp-sust"
+                              disabled={!editMode.pdp}
+                              checked={pdpDraft.showSustainability}
+                              onCheckedChange={(c) => setPdpDraft((d) => ({ ...d, showSustainability: c }))}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <Label htmlFor="pdp-fit">Show fit notes</Label>
+                            <Switch
+                              id="pdp-fit"
+                              disabled={!editMode.pdp}
+                              checked={pdpDraft.showFitNotes}
+                              onCheckedChange={(c) => setPdpDraft((d) => ({ ...d, showFitNotes: c }))}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <Label htmlFor="pdp-care">Show care instructions</Label>
+                            <Switch
+                              id="pdp-care"
+                              disabled={!editMode.pdp}
+                              checked={pdpDraft.showCare}
+                              onCheckedChange={(c) => setPdpDraft((d) => ({ ...d, showCare: c }))}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium mb-2">Live preview</p>
+                          <div className="rounded-xl border bg-background p-4 shadow-sm max-h-[560px] overflow-y-auto">
+                            {(() => {
+                              const first = (products.data || [])[0];
+                              const sample = first || PDP_PREVIEW_MOCK_PRODUCT;
+                              const vList =
+                                first
+                                  ? (variants.data || []).filter((v) => v.product_id === first.id)
+                                  : PDP_PREVIEW_MOCK_VARIANTS;
+                              return (
+                                <ProductDetail
+                                  preview
+                                  product={sample}
+                                  variants={vList.length ? vList : PDP_PREVIEW_MOCK_VARIANTS}
+                                  template={pdpDraft}
+                                  onAddToCart={() => undefined}
+                                />
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="pages">
+                    <AccordionTrigger>Pages (About, Privacy, Terms, Returns, Contact)</AccordionTrigger>
+                    <AccordionContent>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        <Button variant="outline" onClick={() => setEditMode((p) => ({ ...p, pages: true }))}>Edit</Button>
+                        <Button onClick={saveCmsPage} disabled={!editMode.pages}>Save Changes</Button>
+                      </div>
+                      <div className="space-y-3 mb-4">
+                        <div className="space-y-1">
+                          <Label>Load existing page</Label>
+                          <select
+                            className="w-full border rounded-md p-2 bg-background"
+                            value={cmsSelectedSlug}
+                            onChange={(e) => {
+                              const s = e.target.value;
+                              setCmsSelectedSlug(s);
+                              const p = (pages.data || []).find((x) => x.slug === s);
+                              if (p) {
+                                setPageTitle(p.title);
+                                setPageSlug(p.slug);
+                                setPageContent(p.content_md);
+                              }
+                            }}
+                          >
+                            <option value="">New page…</option>
+                            {(pages.data || []).map((p) => (
+                              <option key={p.id} value={p.slug}>
+                                {p.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setCmsSelectedSlug("");
+                            setPageTitle("");
+                            setPageSlug("");
+                            setPageContent("");
+                          }}
+                        >
+                          Clear form
+                        </Button>
+                      </div>
+                      <div className="grid xl:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <input disabled={!editMode.pages} className="border rounded p-2 w-full disabled:opacity-60" value={pageTitle} onChange={(e) => setPageTitle(e.target.value)} placeholder="Page title" />
+                          <input disabled={!editMode.pages} className="border rounded p-2 w-full disabled:opacity-60" value={pageSlug} onChange={(e) => setPageSlug(e.target.value)} placeholder="URL slug (e.g. privacy-policy)" />
+                          <textarea disabled={!editMode.pages} className="border rounded p-2 w-full disabled:opacity-60 font-mono text-sm" rows={14} value={pageContent} onChange={(e) => setPageContent(e.target.value)} placeholder="Markdown content" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium mb-2">Live preview</p>
+                          <div className="rounded-xl border bg-card p-6 min-h-[320px] max-h-[520px] overflow-y-auto">
+                            {pageTitle ? <h2 className="text-2xl font-semibold mb-4">{pageTitle}</h2> : null}
+                            <MarkdownContent content={pageContent || "*Start typing to preview…*"} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 space-y-1 text-sm text-muted-foreground">{(pages.data || []).map((p) => <p key={p.id}>{p.title} — /pages/{p.slug}</p>)}</div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="brand">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">Brand, Contact & Assets</CardTitle>
+                <CardDescription>Update visible brand identity and contact metadata.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Accordion type="multiple">
+                  <AccordionItem value="branding">
+                    <AccordionTrigger>Logo and Favicon</AccordionTrigger>
+                    <AccordionContent>
+                      <div className="flex gap-2 mb-3">
+                        <Button variant="outline" onClick={() => setEditMode((p) => ({ ...p, branding: true }))}>Edit</Button>
+                        <Button onClick={saveBranding} disabled={!editMode.branding}>Save Changes</Button>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <ImageUploadField label="Logo" disabled={!editMode.branding} value={logoUrl} onChange={setLogoUrl} />
+                        <ImageUploadField label="Favicon" helperText="PNG, ICO, or SVG." disabled={!editMode.branding} value={faviconUrl} onChange={setFaviconUrl} />
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="contact">
+                    <AccordionTrigger>Contact Details</AccordionTrigger>
+                    <AccordionContent>
+                      <div className="flex gap-2 mb-3">
+                        <Button variant="outline" onClick={() => setEditMode((p) => ({ ...p, contact: true }))}>Edit</Button>
+                        <Button onClick={saveContactDetails} disabled={!editMode.contact}>Save Changes</Button>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-2 mb-2">
+                        <input disabled={!editMode.contact} className="border rounded p-2 disabled:opacity-60" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="Phone" />
+                        <input disabled={!editMode.contact} className="border rounded p-2 disabled:opacity-60" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Email" />
+                        <input disabled={!editMode.contact} className="border rounded p-2 disabled:opacity-60" value={contactWhatsapp} onChange={(e) => setContactWhatsapp(e.target.value)} placeholder="WhatsApp" />
+                        <input disabled={!editMode.contact} className="border rounded p-2 disabled:opacity-60" value={contactAddress} onChange={(e) => setContactAddress(e.target.value)} placeholder="Address" />
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="advanced">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">Advanced Settings</CardTitle>
+                <CardDescription>Use key-value settings for custom platform flags and metadata.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2 mb-3">
+                  <Button variant="outline" onClick={() => setEditMode((p) => ({ ...p, advanced: true }))}>Edit</Button>
+                  <Button onClick={upsertSetting} disabled={!editMode.advanced}>Save Changes</Button>
+                </div>
+                <div className="grid md:grid-cols-3 gap-2 mb-3">
+                  <input disabled={!editMode.advanced} className="border rounded p-2 disabled:opacity-60" value={settingKey} onChange={(e) => setSettingKey(e.target.value)} placeholder="key (e.g. gst_number)" />
+                  <input disabled={!editMode.advanced} className="border rounded p-2 disabled:opacity-60" value={settingValue} onChange={(e) => setSettingValue(e.target.value)} placeholder="value" />
+                </div>
+                <div className="space-y-1 text-sm">{(settings.data || []).map((s) => <p key={s.id}>{s.key}: {s.value}</p>)}</div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+            </div>
           </div>
-          {(settings.data || []).map((s) => <p key={s.id} className="text-sm">{s.key}: {s.value}</p>)}
-        </section>
+        </Tabs>
       </main>
     </AppShell>
   );
@@ -508,6 +926,25 @@ function RootRoutes() {
     localStorage.setItem(CART_KEY, JSON.stringify(cart));
   }, [cart]);
 
+  useEffect(() => {
+    supabase
+      .from("site_setting")
+      .select("value")
+      .eq("key", "favicon_url")
+      .maybeSingle()
+      .then(({ data }) => {
+        const faviconUrl = data?.value;
+        if (!faviconUrl) return;
+        let link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "icon";
+          document.head.appendChild(link);
+        }
+        link.href = faviconUrl;
+      });
+  }, []);
+
   function addToCart(item: CartItem) {
     setCart((prev) => {
       const found = prev.find((p) => p.variantId === item.variantId);
@@ -522,14 +959,42 @@ function RootRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
+      <Route path="/" element={<Index />} />
       <Route path="/shop" element={<ShopPage onAddToCart={addToCart} />} />
       <Route path="/products/:slug" element={<ProductPage onAddToCart={addToCart} />} />
       <Route path="/cart" element={<CartPage cart={cart} onUpdateQty={updateQty} />} />
       <Route path="/checkout" element={<CheckoutPage cart={cart} onClearCart={() => setCart([])} />} />
       <Route path="/admin" element={<AdminPage />} />
+      <Route path="/pages/:slug" element={<CmsPageView />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
+  );
+}
+
+function CmsPageView() {
+  const { slug } = useParams();
+  const pageQuery = useQuery({
+    queryKey: ["cms-page", slug],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cms_page")
+        .select("*")
+        .eq("slug", slug || "")
+        .eq("is_published", true)
+        .maybeSingle();
+      if (error) throw error;
+      return (data || null) as CmsPage | null;
+    },
+  });
+
+  if (!pageQuery.data) return <NotFound />;
+  return (
+    <AppShell>
+      <main className="max-w-3xl mx-auto px-4 py-10 space-y-6">
+        <h1 className="text-3xl font-semibold">{pageQuery.data.title}</h1>
+        <MarkdownContent content={pageQuery.data.content_md} />
+      </main>
+    </AppShell>
   );
 }
 

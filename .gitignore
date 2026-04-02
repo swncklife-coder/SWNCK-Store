@@ -3,3 +3,6 @@ dist
 .env.local
 .DS_Store
 
+# macOS AppleDouble / resource-fork files (common on exFAT / external volumes)
+._*
+
