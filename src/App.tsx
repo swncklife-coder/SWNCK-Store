@@ -22,7 +22,6 @@ import { supabase } from "@/lib/supabase";
 import type { CmsPage, HomepageSection, Product, ProductCategory, ProductCollection, ProductVariant, SiteSetting } from "@/types/commerce";
 import { DEFAULT_PDP_TEMPLATE, type PdpTemplate, parsePdpTemplate } from "@/types/pdp-template";
 import { formatInr } from "@/lib/format";
-import { getPublicSiteUrl } from "@/lib/site-url";
 
 const queryClient = new QueryClient();
 
@@ -363,6 +362,8 @@ function AdminPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const [session, setSession] = useState<boolean>(false);
   const [pageTitle, setPageTitle] = useState("");
   const [pageSlug, setPageSlug] = useState("");
@@ -429,14 +430,21 @@ function AdminPage() {
     supabase.auth.getSession().then(({ data }) => setSession(Boolean(data.session)));
   }, []);
 
-  async function loginWithMagicLink() {
-    const origin = getPublicSiteUrl();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: origin ? { emailRedirectTo: `${origin}/admin` } : undefined,
-    });
-    if (error) alert(error.message);
-    else alert("Magic link sent. Open your email to sign in.");
+  async function loginWithPassword() {
+    if (!email || !password) {
+      toast({ title: "Missing credentials", description: "Enter both email and password.", variant: "destructive" });
+      return;
+    }
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setAuthLoading(false);
+    if (error) {
+      toast({ title: "Sign-in failed", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Signed in", description: "Admin session started." });
+      const { data } = await supabase.auth.getSession();
+      setSession(Boolean(data.session));
+    }
   }
 
   async function saveCmsPage() {
@@ -554,9 +562,20 @@ function AdminPage() {
       <AppShell>
         <main className="max-w-lg mx-auto px-4 py-16 space-y-4">
           <h1 className="text-3xl font-semibold">Admin sign-in</h1>
-          <p className="text-sm text-muted-foreground">Use a Supabase-authenticated admin email.</p>
+          <p className="text-sm text-muted-foreground">
+            Use a Supabase-authenticated admin email and password with access to the SWNCK project.
+          </p>
           <input className="border rounded w-full p-2" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Admin email" />
-          <Button onClick={loginWithMagicLink}>Send magic link</Button>
+          <input
+            className="border rounded w-full p-2"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+          />
+          <Button onClick={loginWithPassword} disabled={authLoading}>
+            {authLoading ? "Signing in..." : "Sign in"}
+          </Button>
         </main>
       </AppShell>
     );
